@@ -7,10 +7,16 @@ if __name__ == "__main__":
     sys.path.append(ROOT_DIR)
     os.chdir(ROOT_DIR)
 
+import os
 import hydra
+import torch
 import pathlib
+from torch.utils.data import DataLoader
+import copy
 import random
+import wandb
 import tqdm
+import numpy as np
 import shutil
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 import torchvision
@@ -33,7 +39,6 @@ from pytorch_lightning.utilities import rank_zero_only
 import wandb
 import copy
 from UniT.dataset.tactile_representation_dataset import TactileRepresentationDataset
-from UniT.dataset.tactile_representation_dataset_ycb import TactileRepresentationDatasetYcb
 from UniT.taming.models.vqgan import VQModel, WOVQModel
 from UniT.dataset.representation_wrapper import RepresentationWrapper
 from UniT.taming.logging_util import *
@@ -91,8 +96,7 @@ class TrainVqvaeRepresentationWorkspace(BaseWorkspace):
             "target": "UniT.taming.logging_util.PeriodicCheckpointCallback",
             "params": {
                 "ckptdir": ckptdir,
-                "save_interval": 1,  
-                "save_last_n": 3,   
+                "save_last_n": 100,     
                 "verbose": True,
             }
         }
@@ -102,6 +106,8 @@ class TrainVqvaeRepresentationWorkspace(BaseWorkspace):
         trainer_kwargs["callbacks"] = [instantiate_from_config(callbacks_cfg[k]) for k in callbacks_cfg]
 
         trainer = Trainer.from_argparse_args(trainer_opt, **trainer_kwargs)
+        trainer.max_epochs = cfg.trainer.max_epochs
+        print("max_epochs: ", trainer.max_epochs)
         self.trainer = trainer
         self.lightning_config = lightning_config
         self.cpktdir = ckptdir
@@ -110,11 +116,9 @@ class TrainVqvaeRepresentationWorkspace(BaseWorkspace):
         cfg = copy.deepcopy(self.cfg)
         lightning_config = self.lightning_config
         opt = self.opt
-        if cfg.datatype == 'ycb':
-            human_demonstrations_img = TactileRepresentationDatasetYcb(**cfg.dataset)
-        else:
-            human_demonstrations_img = TactileRepresentationDataset(**cfg.dataset)
+        human_demonstrations_img = TactileRepresentationDataset(**cfg.dataset)
         data = RepresentationWrapper(human_demonstrations_img,cfg)
+        
         bs, base_lr = cfg.batch_size, cfg.base_learning_rate
         ngpu = len(lightning_config.trainer.gpus.strip(",").split(','))
         accumulate_grad_batches = lightning_config.trainer.get('accumulate_grad_batches', 1)
@@ -128,6 +132,7 @@ class TrainVqvaeRepresentationWorkspace(BaseWorkspace):
 
             except Exception:
                 raise
+
         if not opt.no_test and not self.trainer.interrupted:
             self.trainer.test(self.model, data)
 

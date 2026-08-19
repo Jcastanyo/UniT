@@ -16,7 +16,7 @@ def real_data_to_replay_buffer(
 
     # verify input
     input = pathlib.Path(os.path.expanduser(dataset_path))
-    in_zarr_path = input.joinpath("replay_buffer.zarr")
+    in_zarr_path = input.joinpath("dataset_rep_learning.zarr")
     assert in_zarr_path.is_dir()
 
     in_replay_buffer = ReplayBuffer.create_from_path(

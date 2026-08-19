@@ -34,7 +34,7 @@ class TactileRepresentationDataset(BaseImageDataset):
         assert os.path.isdir(dataset_path)
         
         replay_buffer = None
-
+        print(dataset_path)
         replay_buffer = _get_replay_buffer(
             dataset_path=dataset_path,
         )
@@ -109,29 +109,15 @@ class TactileRepresentationDataset(BaseImageDataset):
         threadpool_limits(1)
         data = self.sampler.sample_sequence(idx)
 
-        # to save RAM, only return first n_obs_steps of OBS
-        # since the rest will be discarded anyway.
-        # when self.n_obs_steps is None
-        # this slice does nothing (takes all)
-        T_slice = slice(self.n_obs_steps)
-
-        obs_dict = dict()
-        for key in self.rgb_keys:
-            # move channel last to channel first
-            # T,H,W,C
-            # convert uint8 image to float32
-            obs_dict[key] = np.moveaxis(data[key][T_slice],-1,1
-                ).astype(np.float32) / 255.
-            
-            # T,C,H,W
-            # save ram
-            del data[key]
+        raw_img = data['tactile_image'][0]
+        #print(raw_img.shape)
+        img_float = raw_img.astype(np.float32) / 255.0
+        #img_chw = np.transpose(img_float, (2,0,1))
 
         del data
-        transposed_image = obs_dict['tactile_image'][0].transpose(1, 2, 0)
-        H,W = self.resized_image_shape
-        resized_image = cv2.resize(transposed_image, (W,H))
-        tactile_image = {'image': resized_image}
+
+        #print(img_chw.shape)
+        tactile_image = {'image': img_float}
 
         return tactile_image
 
@@ -139,6 +125,7 @@ def _get_replay_buffer(dataset_path):
     # load data
     cv2.setNumThreads(1)
     with threadpool_limits(1):
+        print(dataset_path)
         replay_buffer = real_data_to_replay_buffer(
             dataset_path=dataset_path,
         )
