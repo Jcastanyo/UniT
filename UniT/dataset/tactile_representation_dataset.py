@@ -16,6 +16,7 @@ from diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.common.sampler import (
     SequenceSampler, get_val_mask, downsample_mask)
 from UniT.dataset.real_data_conversion import real_data_to_replay_buffer
+from UniT.dataset.color_augmentation import ColorAugmentation
 
 class TactileRepresentationDataset(BaseImageDataset):
     def __init__(self,
@@ -30,6 +31,7 @@ class TactileRepresentationDataset(BaseImageDataset):
             val_ratio=0.0,
             max_train_episodes=None,
             resized_image_shape=(128, 160),
+            augmentation=None,
         ):
         assert os.path.isdir(dataset_path)
         
@@ -83,12 +85,19 @@ class TactileRepresentationDataset(BaseImageDataset):
         self.pad_before = pad_before
         self.pad_after = pad_after
         self.resized_image_shape = resized_image_shape
+        # Aumentado de color solo en la entrada: el objetivo ('target') se
+        # mantiene limpio para que el modelo aprenda a mapear cualquier
+        # color a una imagen táctil general.
+        self.augmentation = (
+            ColorAugmentation(**OmegaConf.to_container(augmentation, resolve=True))
+            if augmentation is not None else None)
         # Dummy value
         self.horizon = 1
         self.n_obs_steps = 1
 
     def get_validation_dataset(self):
         val_set = copy.copy(self)
+        val_set.augmentation = None  # validación siempre sobre imágenes limpias
         val_set.sampler = SequenceSampler(
             replay_buffer=self.replay_buffer, 
             sequence_length=self.horizon+self.n_latency_steps,
@@ -117,9 +126,12 @@ class TactileRepresentationDataset(BaseImageDataset):
         del data
 
         #print(img_chw.shape)
-        tactile_image = {'image': img_float}
+        if self.augmentation is None:
+            return {'image': img_float}
 
-        return tactile_image
+        # entrada aumentada, objetivo limpio
+        return {'image': self.augmentation(img_float),
+                'target': img_float}
 
 def _get_replay_buffer(dataset_path):
     # load data
