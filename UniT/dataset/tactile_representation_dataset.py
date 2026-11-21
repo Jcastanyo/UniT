@@ -17,6 +17,7 @@ from diffusion_policy.common.sampler import (
     SequenceSampler, get_val_mask, downsample_mask)
 from UniT.dataset.real_data_conversion import real_data_to_replay_buffer
 from UniT.dataset.color_augmentation import ColorAugmentation
+from UniT.dataset.background_fusion import BackgroundFusion
 
 class TactileRepresentationDataset(BaseImageDataset):
     def __init__(self,
@@ -88,9 +89,7 @@ class TactileRepresentationDataset(BaseImageDataset):
         # Aumentado de color solo en la entrada: el objetivo ('target') se
         # mantiene limpio para que el modelo aprenda a mapear cualquier
         # color a una imagen táctil general.
-        self.augmentation = (
-            ColorAugmentation(**OmegaConf.to_container(augmentation, resolve=True))
-            if augmentation is not None else None)
+        self.augmentation = _build_augmentation(augmentation)
         # Dummy value
         self.horizon = 1
         self.n_obs_steps = 1
@@ -132,6 +131,36 @@ class TactileRepresentationDataset(BaseImageDataset):
         # entrada aumentada, objetivo limpio
         return {'image': self.augmentation(img_float),
                 'target': img_float}
+
+class _Compose:
+    """Aplica en orden las transformaciones de entrada (float32 HxWx3 -> float32 HxWx3)."""
+
+    def __init__(self, transforms):
+        self.transforms = transforms
+
+    def __call__(self, image):
+        for t in self.transforms:
+            image = t(image)
+        return image
+
+
+def _build_augmentation(augmentation):
+    """Construye el aumentado a partir de la config `dataset.augmentation`.
+
+    Los parámetros de color están al nivel superior (ColorAugmentation). Si existe el bloque
+    `background_fusion`, primero se aplica la imagen de diferencia con fondos (BackgroundFusion)
+    y después el aumentado de color. Sin ese bloque el comportamiento es el de siempre.
+    """
+    if augmentation is None:
+        return None
+    cfg = OmegaConf.to_container(augmentation, resolve=True)
+    fusion_cfg = cfg.pop('background_fusion', None)
+    transforms = []
+    if fusion_cfg is not None:
+        transforms.append(BackgroundFusion(bgr=cfg.get('bgr', False), **fusion_cfg))
+    transforms.append(ColorAugmentation(**cfg))
+    return transforms[0] if len(transforms) == 1 else _Compose(transforms)
+
 
 def _get_replay_buffer(dataset_path):
     # load data
